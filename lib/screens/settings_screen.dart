@@ -1,0 +1,815 @@
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../components/gradient_button.dart';
+import '../services/backup/backup_service.dart';
+import '../services/backup/restore_service.dart';
+import '../services/candidate_service.dart';
+import '../theme/app_theme.dart';
+
+class SettingsScreen extends StatefulWidget {
+  const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  bool _isBackingUp = false;
+  bool _isRestoring = false;
+  double _progress = 0.0;
+  String _progressMessage = '';
+  String? _lastBackupTime;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastBackupTime = BackupService.getLastBackupTime();
+  }
+
+  Future<void> _backupData() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Backup Data'),
+        content: const Text(
+          'This will export all candidates, votes, photos, and settings into a ZIP file.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          GradientButton(
+            label: 'Start Backup',
+            onPressed: () => Navigator.pop(ctx, true),
+            expanded: false,
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    setState(() {
+      _isBackingUp = true;
+      _progress = 0.0;
+      _progressMessage = 'Starting...';
+    });
+
+    try {
+      print('[SettingsScreen] === Starting backup flow ===');
+
+      final backupResult = await BackupService.performBackup(
+        onProgress: (progress, message) {
+          if (mounted) {
+            setState(() {
+              _progress = 0.8 * progress;
+              _progressMessage = message;
+            });
+          }
+        },
+      );
+
+      if (!mounted) return;
+
+      print('[SettingsScreen] Backup created: filename=${backupResult.filename}, '
+          'zipBytes.length=${backupResult.zipBytes.length}');
+
+      // Verify ZIP bytes are valid (in-memory, no scoped storage issue)
+      if (backupResult.zipBytes.isEmpty) {
+        throw Exception('Backup ZIP is empty (0 bytes) - creation failed');
+      }
+      print('[SettingsScreen] ZIP bytes verified: ${backupResult.zipBytes.length} bytes > 0 ✓');
+
+      setState(() {
+        _progress = 0.85;
+        _progressMessage = 'Choosing save location...';
+      });
+
+      String finalPath;
+      bool savedViaSaf = false;
+
+      // Step A: Try SAF save via file_picker's saveFile (native Java writes via ContentResolver)
+      print('[SettingsScreen] Attempting SAF save via saveFile()...');
+      final savedPath = await BackupService.saveToUserLocation(
+        backupResult.zipBytes,
+        backupResult.filename,
+      );
+
+      if (savedPath != null) {
+        finalPath = savedPath;
+        savedViaSaf = true;
+        if (!mounted) return;
+        print('[SettingsScreen] SAF save returned path: $finalPath');
+        // NOTE: We do NOT verify with File.existsSync() here because on Android 10+,
+        // dart:io cannot access scoped storage paths like /storage/emulated/0/Download/.
+        // The native Java code in FilePickerDelegate.java already confirmed the write
+        // by using ContentResolver.openOutputStream(uri) (SAF-compliant).
+        // If saveFile() returned a path without throwing, the file was saved correctly.
+        print('[SettingsScreen] SAF save: trusting native write (skipping dart:io verify) ✓');
+      } else {
+        // Step B: Fallback - save to app documents directory
+        print('[SettingsScreen] SAF save returned null, falling back to app documents...');
+        if (mounted) {
+          setState(() {
+            _progressMessage = 'Saving to app storage...';
+          });
+        }
+        finalPath = await BackupService.saveToAppDocuments(
+          backupResult.zipBytes,
+          backupResult.filename,
+        );
+        // App documents are always writable by dart:io, so verify here
+        final savedFile = File(finalPath);
+        if (!savedFile.existsSync()) {
+          throw Exception('Fallback save: file not found at: $finalPath');
+        }
+        if (savedFile.lengthSync() == 0) {
+          throw Exception('Fallback save: file is 0 bytes at: $finalPath');
+        }
+        print('[SettingsScreen] Fallback save verified: ${savedFile.lengthSync()} bytes ✓');
+      }
+
+      // Step C: Clean up temp directory now that save is confirmed
+      print('[SettingsScreen] Cleaning up temp dir...');
+      await backupResult.cleanupTempDir();
+
+      if (!mounted) return;
+
+      setState(() {
+        _isBackingUp = false;
+        _lastBackupTime = BackupService.getLastBackupTime();
+      });
+
+      print('[SettingsScreen] Backup complete! Final path: $finalPath');
+
+      await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.check_circle, color: AppTheme.secondaryGreen, size: 28),
+              SizedBox(width: 10),
+              Text('Backup Complete'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Backup saved to:',
+                style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textGrey),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.backgroundWhite,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  finalPath,
+                  style: GoogleFonts.inter(
+                    fontSize: 12,
+                    color: AppTheme.textDark,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              if (!savedViaSaf) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.warningOrange.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline_rounded, size: 16, color: AppTheme.warningOrange),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Saved to app storage. Use a file manager to copy the file.',
+                          style: GoogleFonts.inter(fontSize: 12, color: AppTheme.textGrey),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            GradientButton(
+              label: 'OK',
+              onPressed: () => Navigator.pop(ctx),
+              expanded: false,
+            ),
+          ],
+        ),
+      );
+    } catch (e, stack) {
+      print('[SettingsScreen] BACKUP FAILED: $e');
+      print('[SettingsScreen] STACK: $stack');
+      if (!mounted) return;
+      setState(() {
+        _isBackingUp = false;
+      });
+      _showError('Backup failed: ${e.toString()}');
+    }
+  }
+
+  Future<void> _restoreData() async {
+    final warning = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Restore Data'),
+        content: Text(
+          'This will REPLACE all current data with the backup.\n\n'
+          'An automatic backup of current data will be created before restoring.\n\n'
+          'Proceed?',
+          style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textDark),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          GradientButton(
+            label: 'Restore',
+            gradient: [AppTheme.warningOrange, AppTheme.warningOrange],
+            onPressed: () => Navigator.pop(ctx, true),
+            expanded: false,
+          ),
+        ],
+      ),
+    );
+
+    if (warning != true || !mounted) return;
+
+    String? zipPath;
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['zip'],
+        dialogTitle: 'Select backup ZIP file',
+      );
+
+      if (result == null || result.files.isEmpty) return;
+      zipPath = result.files.single.path;
+    } catch (_) {
+      _showError('Could not open file picker.');
+      return;
+    }
+
+    if (zipPath == null || !File(zipPath).existsSync()) {
+      _showError('Selected file does not exist.');
+      return;
+    }
+
+    setState(() {
+      _isRestoring = true;
+      _progress = 0.0;
+      _progressMessage = 'Starting restore...';
+    });
+
+    try {
+      final restoreResult = await RestoreService.performRestore(
+        zipPath,
+        onProgress: (progress, message) {
+          if (mounted) {
+            setState(() {
+              _progress = progress;
+              _progressMessage = message;
+            });
+          }
+        },
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _isRestoring = false;
+      });
+
+      if (restoreResult.success) {
+        await showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Row(
+              children: [
+                Icon(Icons.check_circle, color: AppTheme.secondaryGreen, size: 28),
+                SizedBox(width: 10),
+                Text('Restore Complete'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _restoreStat('Candidates', restoreResult.candidatesRestored),
+                _restoreStat('Votes', restoreResult.votesRestored),
+                _restoreStat('Photos', restoreResult.photosRestored),
+                const SizedBox(height: 10),
+                Text(
+                  restoreResult.message,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    color: AppTheme.secondaryGreen,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              GradientButton(
+                label: 'OK',
+                onPressed: () => Navigator.pop(ctx),
+                expanded: false,
+              ),
+            ],
+          ),
+        );
+      } else {
+        _showError(restoreResult.message);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isRestoring = false;
+      });
+      _showError('Restore failed: ${e.toString()}');
+    }
+  }
+
+  Widget _restoreStat(String label, int count) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: const BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppTheme.secondaryGreen,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            '$label: $count',
+            style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textDark),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.error_outline, color: AppTheme.errorRed, size: 28),
+            SizedBox(width: 10),
+            Text('Error'),
+          ],
+        ),
+        content: Text(
+          message,
+          style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textDark),
+        ),
+        actions: [
+          GradientButton(
+            label: 'OK',
+            gradient: [AppTheme.errorRed, AppTheme.errorRed],
+            onPressed: () => Navigator.pop(ctx),
+            expanded: false,
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isBusy = _isBackingUp || _isRestoring;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Settings'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+        children: [
+          if (isBusy) ...[
+            _buildProgressSection(),
+            const SizedBox(height: 24),
+          ],
+          _buildSectionHeader('Data Management'),
+          const SizedBox(height: 14),
+          _buildBackupCard(),
+          const SizedBox(height: 16),
+          _buildRestoreCard(),
+          const SizedBox(height: 24),
+          _buildSectionHeader('Information'),
+          const SizedBox(height: 14),
+          _buildInfoCard(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProgressSection() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [AppTheme.primaryBlue, AppTheme.secondaryPurple],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.primaryBlue.withValues(alpha: 0.25),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              SizedBox(
+                width: 22,
+                height: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.5,
+                  color: Colors.white.withValues(alpha: 0.8),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  _progressMessage,
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    color: Colors.white,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              value: _progress,
+              backgroundColor: Colors.white.withValues(alpha: 0.2),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                Colors.white.withValues(alpha: 0.9),
+              ),
+              minHeight: 6,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${(_progress * 100).toInt()}%',
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              color: Colors.white.withValues(alpha: 0.7),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Row(
+      children: [
+        Container(
+          width: 4,
+          height: 24,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: AppTheme.primaryGradient,
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          title,
+          style: GoogleFonts.poppins(
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            color: AppTheme.textDark,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBackupCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryBlue.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(
+                    Icons.backup_rounded,
+                    color: AppTheme.primaryBlue,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Backup Data',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Export all data to a ZIP file',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: AppTheme.textGrey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (_lastBackupTime != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: AppTheme.secondaryGreen.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.access_time_rounded,
+                        size: 14, color: AppTheme.secondaryGreen),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Last backup: $_lastBackupTime',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppTheme.secondaryGreen,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: GradientButton(
+                label: _isBackingUp ? 'Backing up...' : 'Backup Data',
+                icon: Icons.backup_rounded,
+                onPressed: _isBackingUp ? null : _backupData,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRestoreCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: AppTheme.warningOrange.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(
+                    Icons.restore_page_rounded,
+                    color: AppTheme.warningOrange,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Restore Data',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Restore from a previous backup ZIP file',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: AppTheme.textGrey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.warningOrange.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.info_outline_rounded,
+                      size: 16, color: AppTheme.warningOrange),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Current data will be automatically backed up before restoring. '
+                      'If anything goes wrong, your original data will be recovered.',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppTheme.textGrey,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: GradientButton(
+                label: _isRestoring ? 'Restoring...' : 'Restore Data',
+                icon: Icons.restore_page_rounded,
+                gradient: [AppTheme.warningOrange, AppTheme.warningOrange],
+                onPressed: _isRestoring ? null : _restoreData,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoCard() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _infoRow(
+            'Storage',
+            'Hive Database',
+            Icons.storage_rounded,
+          ),
+          const Divider(height: 24),
+          _infoRow(
+            'Candidates',
+            '${CandidateServiceEx.totalCandidates} registered',
+            Icons.people_rounded,
+          ),
+          const Divider(height: 24),
+          _infoRow(
+            'Total Votes',
+            '${CandidateServiceEx.totalVotesCast} cast',
+            Icons.how_to_vote_rounded,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoRow(String label, String value, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, size: 20, color: AppTheme.textGrey),
+        const SizedBox(width: 12),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: GoogleFonts.inter(
+                fontSize: 12,
+                color: AppTheme.textGrey,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            Text(
+              value,
+              style: GoogleFonts.poppins(
+                fontSize: 14,
+                color: AppTheme.textDark,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class CandidateServiceEx {
+  static int get totalCandidates {
+    try {
+      return CandidateService.totalCandidates;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  static int get totalVotesCast {
+    try {
+      return CandidateService.totalVotes;
+    } catch (_) {
+      return 0;
+    }
+  }
+}
