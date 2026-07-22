@@ -63,16 +63,32 @@ class RestoreService {
       onProgress?.call(0.1, 'Extracting backup...');
       await ZipService.extractZip(zipPath, tempDir.path);
 
-      final backupDir = Directory(p.join(tempDir.path, 'backup'));
-      final photosDir = Directory(p.join(backupDir.path, 'photos'));
-
-      if (!backupDir.existsSync()) {
-        return const RestoreResult(
-          success: false,
-          message:
-              'Invalid backup format: backup folder not found in archive.',
-        );
+      // ── Debug: log exact ZIP structure ──
+      debugPrint('[RestoreService] Extracted ZIP at: ${tempDir.path}');
+      final extractedEntities = tempDir.listSync(recursive: true);
+      for (final entity in extractedEntities) {
+        if (entity is File) {
+          debugPrint('[RestoreService]   ${p.relative(entity.path, from: tempDir.path)}');
+        } else if (entity is Directory) {
+          debugPrint('[RestoreService]   ${p.relative(entity.path, from: tempDir.path)}/');
+        }
       }
+
+      // ── Detect backup structure format ──
+      //   Nested (legacy): backup/backup.json, backup/photos/*
+      //   Flat (current):  backup.json, photos/*
+      final nestedBackupDir = Directory(p.join(tempDir.path, 'backup'));
+      late final Directory backupDir;
+      late final Directory photosDir;
+
+      if (nestedBackupDir.existsSync()) {
+        debugPrint('[RestoreService] Detected nested backup structure (backup/ subdirectory)');
+        backupDir = nestedBackupDir;
+      } else {
+        debugPrint('[RestoreService] Detected flat backup structure (root level)');
+        backupDir = tempDir;
+      }
+      photosDir = Directory(p.join(backupDir.path, 'photos'));
 
       onProgress?.call(0.15, 'Reading backup manifest...');
       final backupJsonFile = File(p.join(backupDir.path, 'backup.json'));
