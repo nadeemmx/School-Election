@@ -7,6 +7,7 @@ import '../services/backup/backup_service.dart';
 import '../services/backup/restore_service.dart';
 import '../services/candidate_service.dart';
 import '../theme/app_theme.dart';
+import 'import_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -418,6 +419,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildBackupCard(),
           const SizedBox(height: 16),
           _buildRestoreCard(),
+          const SizedBox(height: 16),
+          _buildImportCard(),
           const SizedBox(height: 24),
           _buildSectionHeader('Information'),
           const SizedBox(height: 14),
@@ -718,6 +721,116 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 icon: Icons.restore_page_rounded,
                 gradient: [AppTheme.warningOrange, AppTheme.warningOrange],
                 onPressed: _isRestoring ? null : _restoreData,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImportCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: AppTheme.secondaryPurple.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(
+                    Icons.upload_file_rounded,
+                    color: AppTheme.secondaryPurple,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Bulk Import',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Import 100s of candidates from a ZIP file',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: AppTheme.textGrey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.secondaryPurple.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.info_outline_rounded,
+                      size: 16, color: AppTheme.secondaryPurple),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'ZIP must contain candidates.csv and an optional photos/ folder. '
+                      'Candidates will be added to existing data.',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppTheme.textGrey,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: GradientButton(
+                label: 'Import Candidates',
+                icon: Icons.download_rounded,
+                gradient: [AppTheme.secondaryPurple, AppTheme.primaryBlue],
+                onPressed: () async {
+                  final result = await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ImportScreen()),
+                  );
+                  if (result == true && mounted) {
+                    setState(() {});
+                  }
+                },
               ),
             ),
           ],

@@ -39,6 +39,20 @@ class ZipService {
     }
   }
 
+  static void extractZipSync(String zipPath, String outputDir) {
+    final bytes = File(zipPath).readAsBytesSync();
+    final archive = ZipDecoder().decodeBytes(bytes);
+
+    for (final file in archive) {
+      if (file.isFile) {
+        final outPath = '$outputDir/${file.name}';
+        final outFile = File(outPath);
+        outFile.parent.createSync(recursive: true);
+        outFile.writeAsBytesSync(file.content as List<int>);
+      }
+    }
+  }
+
   static bool isValidZip(String zipPath) {
     try {
       final bytes = File(zipPath).readAsBytesSync();
