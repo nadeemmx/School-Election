@@ -1,26 +1,28 @@
 import 'dart:io';
-import 'package:archive/archive_io.dart';
+import 'package:archive/archive.dart';
+import 'package:path/path.dart' as p;
 
 class ZipService {
   static Future<void> createZip(String sourceDir, String outputPath) async {
-    final encoder = ZipFileEncoder();
-    encoder.create(outputPath);
-    await _addDirectory(encoder, Directory(sourceDir), '');
-    await encoder.close();
+    final archive = Archive();
+    await _addDirectoryToArchive(archive, Directory(sourceDir), '');
+    final encoded = ZipEncoder().encode(archive)!;
+    await File(outputPath).writeAsBytes(encoded);
   }
 
-  static Future<void> _addDirectory(
-      ZipFileEncoder encoder, Directory dir, String basePath) async {
+  static Future<void> _addDirectoryToArchive(
+      Archive archive, Directory dir, String basePath) async {
     await for (final entity in dir.list()) {
       if (entity is File) {
-        if (basePath.isEmpty) {
-          await encoder.addFile(entity);
-        } else {
-          await encoder.addFile(entity, '$basePath/${entity.uri.pathSegments.last}');
-        }
+        final data = await entity.readAsBytes();
+        final name = basePath.isEmpty
+            ? p.basename(entity.path)
+            : '$basePath/${p.basename(entity.path)}';
+        archive.addFile(ArchiveFile(name, data.length, data));
       } else if (entity is Directory) {
-        await _addDirectory(
-            encoder, entity, entity.uri.pathSegments.last);
+        final dirName = p.basename(entity.path);
+        final newBase = basePath.isEmpty ? dirName : '$basePath/$dirName';
+        await _addDirectoryToArchive(archive, entity, newBase);
       }
     }
   }

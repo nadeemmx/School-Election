@@ -92,153 +92,198 @@ class _AddCandidateScreenState extends State<AddCandidateScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final votingLocked = CandidateService.hasVotingStarted();
     return Scaffold(
-      appBar: AppBar(title: const Text('Add Candidate')),
+      appBar: AppBar(title: Text(votingLocked ? 'Candidates' : 'Add Candidate')),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
         children: [
-          GlassCard(
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+          if (votingLocked) ...[
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [AppTheme.warningOrange, Color(0xFFEA580C)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
                 children: [
-                  Center(
-                    child: GestureDetector(
-                      onTap: _pickImage,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 300),
-                        child: Stack(
-                          children: [
-                            PhotoAvatar(
-                              photoPath: _photoPath,
-                              initials: '?',
-                              backgroundColor: const Color(0xFFF1F5F9),
-                              size: 88,
-                              borderRadius: 24,
-                            ),
-                            Positioned(
-                              bottom: 0,
-                              right: 0,
-                              child: Container(
-                                width: 30,
-                                height: 30,
-                                decoration: BoxDecoration(
-                                  gradient: const LinearGradient(
-                                    colors: [AppTheme.primaryBlue, AppTheme.secondaryPurple],
-                                    begin: Alignment.topLeft,
-                                    end: Alignment.bottomRight,
-                                  ),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.white, width: 2.5),
-                                ),
-                                child: const Icon(Icons.camera_alt_rounded, size: 14, color: Colors.white),
-                              ),
-                            ),
-                            if (_photoPath != null)
-                              Positioned(
-                                top: 0,
-                                right: 0,
-                                child: GestureDetector(
-                                  onTap: _removePhoto,
-                                  child: Container(
-                                    width: 24,
-                                    height: 24,
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.errorRed,
-                                      shape: BoxShape.circle,
-                                      border: Border.all(color: Colors.white, width: 2),
-                                    ),
-                                    child: const Icon(Icons.close_rounded, size: 13, color: Colors.white),
-                                  ),
-                                ),
-                              ),
-                          ],
+                  const Icon(Icons.lock_rounded, color: Colors.white, size: 22),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Voting In Progress',
+                          style: GoogleFonts.poppins(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
                         ),
-                      ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Candidate management is locked while voting is active.',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: Colors.white70,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(height: 10),
-                  Center(
-                    child: GestureDetector(
-                      onTap: _pickImage,
-                      child: Text(
-                        _photoPath != null ? 'Tap to change' : 'Tap to add photo',
-                        style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w500, color: AppTheme.primaryBlue),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 22),
-                  PremiumDropdown(
-                    label: 'Position',
-                    value: _selectedPosition,
-                    items: AppConstants.positions,
-                    onChanged: (v) => setState(() => _selectedPosition = v),
-                  ),
-                  const SizedBox(height: 14),
-                  PremiumTextField(
-                    controller: _nameController,
-                    label: 'Student Name',
-                    prefixIcon: Icons.person_outline,
-                    validator: (v) => v == null || v.trim().isEmpty ? 'Enter name' : null,
-                  ),
-                  const SizedBox(height: 14),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: PremiumDropdown(
-                          label: 'Class',
-                          value: _selectedClass,
-                          items: AppConstants.classes,
-                          onChanged: (v) => setState(() => _selectedClass = v),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: PremiumDropdown(
-                          label: 'Section',
-                          value: _selectedSection,
-                          items: AppConstants.sections,
-                          onChanged: (v) => setState(() => _selectedSection = v),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  PremiumTextField(
-                    controller: _rollController,
-                    label: 'Roll Number',
-                    prefixIcon: Icons.badge_outlined,
-                    validator: (v) => v == null || v.trim().isEmpty ? 'Enter roll number' : null,
-                  ),
-                  const SizedBox(height: 22),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: GradientButton(
-                          label: 'Save Candidate',
-                          icon: Icons.save_rounded,
-                          onPressed: _saveCandidate,
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      OutlinedButton.icon(
-                        onPressed: _resetForm,
-                        icon: const Icon(Icons.refresh_rounded, size: 20),
-                        label: const Text('Reset'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppTheme.textGrey,
-                          side: const BorderSide(color: AppTheme.borderLight),
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        ),
-                      ),
-                    ],
                   ),
                 ],
               ),
             ),
-          ),
+            const SizedBox(height: 20),
+          ] else ...[
+            GlassCard(
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(
+                      child: GestureDetector(
+                        onTap: _pickImage,
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 300),
+                          child: Stack(
+                            children: [
+                              PhotoAvatar(
+                                photoPath: _photoPath,
+                                initials: '?',
+                                backgroundColor: const Color(0xFFF1F5F9),
+                                size: 88,
+                                borderRadius: 24,
+                              ),
+                              Positioned(
+                                bottom: 0,
+                                right: 0,
+                                child: Container(
+                                  width: 30,
+                                  height: 30,
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      colors: [AppTheme.primaryBlue, AppTheme.secondaryPurple],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.white, width: 2.5),
+                                  ),
+                                  child: const Icon(Icons.camera_alt_rounded, size: 14, color: Colors.white),
+                                ),
+                              ),
+                              if (_photoPath != null)
+                                Positioned(
+                                  top: 0,
+                                  right: 0,
+                                  child: GestureDetector(
+                                    onTap: _removePhoto,
+                                    child: Container(
+                                      width: 24,
+                                      height: 24,
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.errorRed,
+                                        shape: BoxShape.circle,
+                                        border: Border.all(color: Colors.white, width: 2),
+                                      ),
+                                      child: const Icon(Icons.close_rounded, size: 13, color: Colors.white),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Center(
+                      child: GestureDetector(
+                        onTap: _pickImage,
+                        child: Text(
+                          _photoPath != null ? 'Tap to change' : 'Tap to add photo',
+                          style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w500, color: AppTheme.primaryBlue),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 22),
+                    PremiumDropdown(
+                      label: 'Position',
+                      value: _selectedPosition,
+                      items: AppConstants.positions,
+                      onChanged: (v) => setState(() => _selectedPosition = v),
+                    ),
+                    const SizedBox(height: 14),
+                    PremiumTextField(
+                      controller: _nameController,
+                      label: 'Student Name',
+                      prefixIcon: Icons.person_outline,
+                      validator: (v) => v == null || v.trim().isEmpty ? 'Enter name' : null,
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: PremiumDropdown(
+                            label: 'Class',
+                            value: _selectedClass,
+                            items: AppConstants.classes,
+                            onChanged: (v) => setState(() => _selectedClass = v),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: PremiumDropdown(
+                            label: 'Section',
+                            value: _selectedSection,
+                            items: AppConstants.sections,
+                            onChanged: (v) => setState(() => _selectedSection = v),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    PremiumTextField(
+                      controller: _rollController,
+                      label: 'Roll Number',
+                      prefixIcon: Icons.badge_outlined,
+                      validator: (v) => v == null || v.trim().isEmpty ? 'Enter roll number' : null,
+                    ),
+                    const SizedBox(height: 22),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: GradientButton(
+                            label: 'Save Candidate',
+                            icon: Icons.save_rounded,
+                            onPressed: _saveCandidate,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        OutlinedButton.icon(
+                          onPressed: _resetForm,
+                          icon: const Icon(Icons.refresh_rounded, size: 20),
+                          label: const Text('Reset'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AppTheme.textGrey,
+                            side: const BorderSide(color: AppTheme.borderLight),
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
           const SizedBox(height: 24),
           if (_candidates.isNotEmpty) ...[
             SectionHeader(title: 'Registered Candidates', count: '${_candidates.length}'),
@@ -247,8 +292,8 @@ class _AddCandidateScreenState extends State<AddCandidateScreen> {
               padding: const EdgeInsets.only(bottom: 12),
               child: CandidateCard(
                 candidate: c,
-                onEdit: () => _showEditDialog(c),
-                onDelete: () => _confirmDelete(c),
+                onEdit: votingLocked ? null : () => _showEditDialog(c),
+                onDelete: votingLocked ? null : () => _confirmDelete(c),
               ),
             )),
           ] else

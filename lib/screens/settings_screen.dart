@@ -19,6 +19,7 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _isBackingUp = false;
   bool _isRestoring = false;
+  bool _isResetting = false;
   double _progress = 0.0;
   String _progressMessage = '';
   String? _lastBackupTime;
@@ -348,6 +349,84 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Future<void> _resetElection() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Reset Election'),
+        content: const Text(
+          'This will reset ALL votes to 0 and clear all voting records.\n\n'
+          'All candidates, photos, school name, and positions will be preserved.\n\n'
+          'This action CANNOT be undone. Take a backup first if needed.\n\n'
+          'Proceed?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          GradientButton(
+            label: 'Reset Election',
+            gradient: [AppTheme.errorRed, AppTheme.warningOrange],
+            onPressed: () => Navigator.pop(ctx, true),
+            expanded: false,
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !mounted) return;
+
+    setState(() => _isResetting = true);
+
+    try {
+      await CandidateService.resetElection();
+
+      if (!mounted) return;
+
+      setState(() => _isResetting = false);
+
+      await showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.check_circle, color: AppTheme.secondaryGreen, size: 28),
+              SizedBox(width: 10),
+              Text('Election Reset'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'All votes have been reset to 0.',
+                style: GoogleFonts.inter(fontSize: 14, color: AppTheme.textDark),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '${CandidateService.totalCandidates} candidates preserved.',
+                style: GoogleFonts.inter(fontSize: 13, color: AppTheme.textGrey),
+              ),
+            ],
+          ),
+          actions: [
+            GradientButton(
+              label: 'OK',
+              onPressed: () => Navigator.pop(ctx),
+              expanded: false,
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isResetting = false);
+      _showError('Reset failed: ${e.toString()}');
+    }
+  }
+
   Widget _restoreStat(String label, int count) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
@@ -419,6 +498,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildBackupCard(),
           const SizedBox(height: 16),
           _buildRestoreCard(),
+          const SizedBox(height: 16),
+          _buildResetCard(),
           const SizedBox(height: 16),
           _buildImportCard(),
           const SizedBox(height: 24),
@@ -729,7 +810,109 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Widget _buildResetCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: AppTheme.errorRed.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(
+                    Icons.restart_alt_rounded,
+                    color: AppTheme.errorRed,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Reset Election',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Clear all votes, keep candidates',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: AppTheme.textGrey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.errorRed.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.warning_amber_rounded,
+                      size: 16, color: AppTheme.errorRed),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Resets all votes to 0. Candidates, photos, school name, and positions are preserved. This action cannot be undone.',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppTheme.textGrey,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: GradientButton(
+                label: _isResetting ? 'Resetting...' : 'Reset Election',
+                icon: Icons.restart_alt_rounded,
+                gradient: [AppTheme.errorRed, AppTheme.warningOrange],
+                onPressed: _isResetting ? null : _resetElection,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildImportCard() {
+    final votingLocked = CandidateService.hasVotingStarted();
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -756,11 +939,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     color: AppTheme.secondaryPurple.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(16),
                   ),
-                  child: const Icon(
-                    Icons.upload_file_rounded,
-                    color: AppTheme.secondaryPurple,
-                    size: 24,
-                  ),
+                  child: votingLocked
+                      ? const Icon(
+                          Icons.lock_rounded,
+                          color: AppTheme.textGrey,
+                          size: 24,
+                        )
+                      : const Icon(
+                          Icons.upload_file_rounded,
+                          color: AppTheme.secondaryPurple,
+                          size: 24,
+                        ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -772,12 +961,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         style: GoogleFonts.poppins(
                           fontSize: 16,
                           fontWeight: FontWeight.w600,
-                          color: AppTheme.textDark,
+                          color: votingLocked ? AppTheme.textGrey : AppTheme.textDark,
                         ),
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        'Import 100s of candidates from a ZIP file',
+                        votingLocked
+                            ? 'Locked - voting has started'
+                            : 'Import 100s of candidates from a ZIP file',
                         style: GoogleFonts.inter(
                           fontSize: 13,
                           color: AppTheme.textGrey,
@@ -788,49 +979,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppTheme.secondaryPurple.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Icon(Icons.info_outline_rounded,
-                      size: 16, color: AppTheme.secondaryPurple),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'ZIP must contain candidates.csv and an optional photos/ folder. '
-                      'Candidates will be added to existing data.',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        color: AppTheme.textGrey,
-                        height: 1.4,
+            if (!votingLocked) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppTheme.secondaryPurple.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.info_outline_rounded,
+                        size: 16, color: AppTheme.secondaryPurple),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'ZIP must contain candidates.csv and an optional photos/ folder. '
+                        'Candidates will be added to existing data.',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
+                          color: AppTheme.textGrey,
+                          height: 1.4,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
+            ],
             const SizedBox(height: 14),
             SizedBox(
               width: double.infinity,
               child: GradientButton(
-                label: 'Import Candidates',
-                icon: Icons.download_rounded,
-                gradient: [AppTheme.secondaryPurple, AppTheme.primaryBlue],
-                onPressed: () async {
-                  final result = await Navigator.push<bool>(
-                    context,
-                    MaterialPageRoute(builder: (_) => const ImportScreen()),
-                  );
-                  if (result == true && mounted) {
-                    setState(() {});
-                  }
-                },
+                label: votingLocked ? 'Locked' : 'Import Candidates',
+                icon: votingLocked ? Icons.lock_rounded : Icons.download_rounded,
+                gradient: votingLocked
+                    ? [AppTheme.textGrey, AppTheme.textGrey]
+                    : [AppTheme.secondaryPurple, AppTheme.primaryBlue],
+                onPressed: votingLocked || _isBackingUp || _isRestoring
+                    ? null
+                    : () async {
+                        final result = await Navigator.push<bool>(
+                          context,
+                          MaterialPageRoute(builder: (_) => const ImportScreen()),
+                        );
+                        if (result == true && mounted) {
+                          setState(() {});
+                        }
+                      },
               ),
             ),
           ],

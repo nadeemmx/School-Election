@@ -75,6 +75,18 @@ class CandidateService {
     await voteBox.clear();
   }
 
+  static Future<void> resetElection() async {
+    for (final candidate in _box.values) {
+      candidate.votes = 0;
+      await _box.put(candidate.id, candidate);
+    }
+    await clearAllVotes();
+  }
+
+  static bool hasVotingStarted() {
+    return totalVotes > 0;
+  }
+
   static int get totalVotes {
     return _box.values.fold(0, (sum, c) => sum + c.votes);
   }

@@ -325,9 +325,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _navigate(BuildContext context, Widget screen) {
-    setState(() => _refreshStats());
-    Navigator.of(context).push(
+  Future<void> _navigate(BuildContext context, Widget screen) async {
+    await Navigator.of(context).push(
       PageRouteBuilder(
         pageBuilder: (_, _, _) => screen,
         transitionsBuilder: (_, animation, _, child) {
@@ -348,5 +347,6 @@ class _HomeScreenState extends State<HomeScreen> {
         transitionDuration: const Duration(milliseconds: 350),
       ),
     );
+    if (mounted) _refreshStats();
   }
 }
