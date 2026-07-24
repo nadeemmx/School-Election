@@ -43,12 +43,14 @@ class BackupService {
   static Future<BackupResult> performBackup({
     void Function(double progress, String message)? onProgress,
   }) async {
-    print('[BackupService] === Starting backup ===');
+    print('[BackupService] =============== BACKUP STARTED ===============');
+    print('[BackupService] Platform: ${Platform.operatingSystem} ${Platform.operatingSystemVersion}');
+    print('[BackupService] Temp dir: ${Directory.systemTemp.path}');
 
     onProgress?.call(0.0, 'Initializing backup...');
 
     final tempDir = await Directory.systemTemp.createTemp('school_election_backup_');
-    print('[BackupService] Step 1: Created temp dir: ${tempDir.path}');
+    print('[BackupService] Created temp dir: ${tempDir.path}');
 
     final backupDir = Directory(p.join(tempDir.path, 'backup'));
     final photosDir = Directory(p.join(backupDir.path, 'photos'));
@@ -56,18 +58,19 @@ class BackupService {
     try {
       await backupDir.create(recursive: true);
       await photosDir.create(recursive: true);
-      print('[BackupService] Step 2: Created backup dirs: ${backupDir.path}');
+      print('[BackupService] Backup dir: ${backupDir.path}');
+      print('[BackupService] Photos dir: ${photosDir.path}');
 
       onProgress?.call(0.1, 'Reading candidates...');
       final candidates = CandidateService.getAll();
-      print('[BackupService] Step 3: Read ${candidates.length} candidates');
+      print('[BackupService] Candidates read: ${candidates.length}');
 
       onProgress?.call(0.2, 'Backing up photos...');
       final photoFiles = await PhotoBackupService.copyPhotosToBackup(
         candidates,
         photosDir.path,
       );
-      print('[BackupService] Step 4: Copied ${photoFiles.length} photos to ${photosDir.path}');
+      print('[BackupService] Photos backed up: ${photoFiles.length}');
 
       onProgress?.call(0.4, 'Reading votes...');
       final voteBox = Hive.box('votes');
@@ -75,7 +78,7 @@ class BackupService {
       for (final key in voteBox.keys) {
         backupVotes.add(BackupVote(key: key.toString(), value: voteBox.get(key)));
       }
-      print('[BackupService] Step 5: Read ${backupVotes.length} votes');
+      print('[BackupService] Votes read: ${backupVotes.length}');
 
       onProgress?.call(0.5, 'Reading configuration...');
       final configBox = Hive.box('app_config');
@@ -84,7 +87,7 @@ class BackupService {
         academicYear: configBox.get('academicYear', defaultValue: SchoolConfig.academicYear) as String,
         logoUrl: configBox.get('logoUrl') as String? ?? SchoolConfig.logoUrl,
       );
-      print('[BackupService] Step 6: Read config: school=${backupConfig.schoolName}');
+      print('[BackupService] Config read: school=${backupConfig.schoolName}');
 
       onProgress?.call(0.6, 'Creating backup manifest...');
       final now = DateTime.now();
@@ -110,86 +113,70 @@ class BackupService {
       final backupJsonPath = p.join(backupDir.path, 'backup.json');
       final jsonEncoder = const JsonEncoder.withIndent('  ');
       await File(backupJsonPath).writeAsString(jsonEncoder.convert(backupData.toJson()));
-      print('[BackupService] Step 7: Written backup.json at: $backupJsonPath');
+      print('[BackupService] backup.json written: $backupJsonPath');
 
       final jsonFile = File(backupJsonPath);
       if (!jsonFile.existsSync()) {
         throw Exception('Failed to create backup.json at: $backupJsonPath');
       }
-      print('[BackupService] Step 7a: backup.json verified, size=${jsonFile.lengthSync()} bytes');
+      print('[BackupService] backup.json size: ${jsonFile.lengthSync()} bytes');
 
       onProgress?.call(0.8, 'Creating ZIP archive...');
       final dateStr = DateFormat('yyyyMMdd_HHmm').format(now);
       final zipFilename = 'SchoolElection_Backup_$dateStr.zip';
       final tempZipPath = p.join(tempDir.path, zipFilename);
+      print('[BackupService] ZIP output path: $tempZipPath');
 
-      // List all files in backup dir before creating ZIP
-      print('[BackupService] Pre-ZIP: backupDir=${backupDir.path}');
-      print('[BackupService] Pre-ZIP: backup.json exists=${File(backupJsonPath).existsSync()}, '
-          'size=${File(backupJsonPath).lengthSync()}');
-      print('[BackupService] Pre-ZIP: photosDir exists=${Directory(photosDir.path).existsSync()}');
-      print('[BackupService] Pre-ZIP: enumerating files...');
+      print('[BackupService] Zipping directory: ${backupDir.path}');
+      print('[BackupService] Contents to zip:');
       await for (final entity in backupDir.list(recursive: true)) {
         if (entity is File) {
-          print('[BackupService] Pre-ZIP: File: ${entity.path} (${entity.lengthSync()} bytes)');
+          print('[BackupService]   File: ${p.relative(entity.path, from: backupDir.path)} (${entity.lengthSync()} bytes)');
         } else if (entity is Directory) {
-          print('[BackupService] Pre-ZIP: Dir: ${entity.path}');
+          print('[BackupService]   Dir: ${p.relative(entity.path, from: backupDir.path)}/');
         }
       }
 
-      // Assert state before ZIP creation
-      final preJsonFile = File(backupJsonPath);
-      if (!preJsonFile.existsSync()) {
-        throw Exception('PRE-ZIP ASSERTION FAILED: backup.json does not exist at: $backupJsonPath');
-      }
-      if (preJsonFile.lengthSync() == 0) {
-        throw Exception('PRE-ZIP ASSERTION FAILED: backup.json is empty (0 bytes) at: $backupJsonPath');
-      }
-      final prePhotosDir = Directory(photosDir.path);
-      if (!prePhotosDir.existsSync()) {
-        print('[BackupService] Pre-ZIP: photos dir does not exist (no photos to back up)');
-      }
-      print('[BackupService] Pre-ZIP: All assertions passed ✓');
-
       await ZipService.createZip(backupDir.path, tempZipPath);
-      print('[BackupService] Step 8: ZIP created at: $tempZipPath');
+      print('[BackupService] ZIP created at: $tempZipPath');
 
       final zipFile = File(tempZipPath);
       if (!zipFile.existsSync()) {
         throw Exception('Failed to create ZIP at: $tempZipPath');
       }
-      print('[BackupService] Step 8a: ZIP exists, size=${zipFile.lengthSync()} bytes');
+      print('[BackupService] ZIP exists: true');
+      print('[BackupService] ZIP size: ${zipFile.lengthSync()} bytes');
 
       if (zipFile.lengthSync() == 0) {
         throw Exception('ZIP file is empty (0 bytes) at: $tempZipPath');
       }
 
       final zipBytes = await zipFile.readAsBytes();
-      print('[BackupService] Step 8b: Read ZIP bytes: ${zipBytes.length} bytes');
+      print('[BackupService] ZIP bytes read: ${zipBytes.length}');
 
       final decoder = ZipDecoder();
       final archive = decoder.decodeBytes(zipBytes);
       final archiveFiles = archive.map((f) => f.name).toList();
-      print('[BackupService] Step 8c: ZIP contents: $archiveFiles');
+      print('[BackupService] ZIP archive contents: $archiveFiles');
 
       if (!archiveFiles.any((name) => name == 'backup.json')) {
         throw Exception('ZIP is missing backup.json. Contents: $archiveFiles');
       }
-      print('[BackupService] Step 8d: Verified backup.json in ZIP ✓');
+      print('[BackupService] ZIP validation: backup.json present ✓');
 
-      if (!archiveFiles.any((name) => name.startsWith('photos/'))) {
-        print('[BackupService] Step 8e: WARNING - No photos folder in ZIP');
+      if (archiveFiles.any((name) => name.startsWith('photos/'))) {
+        print('[BackupService] ZIP validation: photos/ present ✓');
       } else {
-        print('[BackupService] Step 8e: photos folder present in ZIP ✓');
+        print('[BackupService] ZIP validation: photos/ absent (no photos to back up)');
       }
 
       onProgress?.call(0.95, 'Storing backup timestamp...');
       final configBox2 = Hive.box('app_config');
       await configBox2.put('lastBackupTime', now.millisecondsSinceEpoch);
-      print('[BackupService] Step 9: Backup timestamp saved');
+      print('[BackupService] Backup timestamp saved');
 
       onProgress?.call(1.0, 'Backup created!');
-      print('[BackupService] Step 10: Backup creation complete');
+      print('[BackupService] =============== BACKUP GENERATED ===============');
 
       return BackupResult(
         tempDirPath: tempDir.path,
@@ -197,8 +184,9 @@ class BackupService {
         zipBytes: zipBytes,
         filename: zipFilename,
       );
-    } catch (e) {
+    } catch (e, stack) {
       print('[BackupService] ERROR during backup creation: $e');
+      print('[BackupService] STACK: $stack');
       if (tempDir.existsSync()) {
         await tempDir.delete(recursive: true);
         print('[BackupService] Cleaned up temp dir after error: ${tempDir.path}');
@@ -208,43 +196,115 @@ class BackupService {
   }
 
   static Future<String?> saveToUserLocation(Uint8List bytes, String filename) async {
-    print('[BackupService] saveToUserLocation: filename=$filename, bytes.length=${bytes.length}');
+    print('[BackupService] =============== SAVE TO USER LOCATION ===============');
+    print('[BackupService] filename: $filename');
+    print('[BackupService] bytes.length: ${bytes.length}');
+    print('[BackupService] Platform: ${Platform.operatingSystem}');
+
     try {
-      final path = await FilePickerSave.saveFile(bytes: bytes, fileName: filename);
-      print('[BackupService] saveToUserLocation: returned path="$path"');
-      if (path != null && path.isNotEmpty) {
-        _lastBackupPath = path;
-        print('[BackupService] saveToUserLocation: SUCCESS - file saved at: $path');
-        return path;
+      if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+        print('[BackupService] Using DESKTOP save strategy');
+
+        final tempDir = Directory.systemTemp;
+        print('[BackupService] System temp dir: ${tempDir.path}');
+
+        final tempZipPath = p.join(tempDir.path, filename);
+        print('[BackupService] Writing temp ZIP to: $tempZipPath');
+
+        await File(tempZipPath).writeAsBytes(bytes);
+        final tempFile = File(tempZipPath);
+        print('[BackupService] Temp file exists: ${tempFile.existsSync()}');
+        print('[BackupService] Temp file size: ${tempFile.lengthSync()} bytes');
+
+        if (!tempFile.existsSync()) {
+          throw Exception('Failed to write temp ZIP to: $tempZipPath');
+        }
+
+        print('[BackupService] Opening save dialog (without bytes - desktop mode)...');
+        final result = await file_picker.FilePicker.platform.saveFile(
+          fileName: filename,
+        );
+        print('[BackupService] Save dialog result: "$result"');
+
+        if (result != null && result.isNotEmpty) {
+          print('[BackupService] Copying temp ZIP to: $result');
+          await tempFile.copy(result);
+
+          final savedFile = File(result);
+          print('[BackupService] Saved file exists: ${savedFile.existsSync()}');
+          print('[BackupService] Saved file size: ${savedFile.lengthSync()} bytes');
+
+          if (savedFile.existsSync() && savedFile.lengthSync() > 0) {
+            _lastBackupPath = result;
+            print('[BackupService] DESKTOP SAVE SUCCESS: $result');
+            print('[BackupService] ===============================================');
+            return result;
+          } else {
+            print('[BackupService] DESKTOP SAVE FAILED: file does not exist or is empty at: $result');
+          }
+        } else {
+          print('[BackupService] User cancelled save dialog');
+        }
+        print('[BackupService] ===============================================');
+        return null;
+      } else {
+        print('[BackupService] Using MOBILE save strategy (bytes via file_picker)');
+        final result = await file_picker.FilePicker.platform.saveFile(
+          fileName: filename,
+          bytes: bytes,
+        );
+        print('[BackupService] saveToUserLocation: returned path="$result"');
+        if (result != null && result.isNotEmpty) {
+          _lastBackupPath = result;
+          print('[BackupService] MOBILE SAVE SUCCESS: $result');
+          print('[BackupService] ===============================================');
+          return result;
+        }
+        print('[BackupService] saveToUserLocation: path was null or empty (user cancelled?)');
+        print('[BackupService] ===============================================');
+        return null;
       }
-      print('[BackupService] saveToUserLocation: path was null or empty (user cancelled?)');
     } catch (e, stack) {
       print('[BackupService] saveToUserLocation: ERROR: $e');
       print('[BackupService] saveToUserLocation: STACK: $stack');
+      print('[BackupService] ===============================================');
     }
     return null;
   }
 
   static Future<String> saveToAppDocuments(Uint8List bytes, String filename) async {
-    print('[BackupService] saveToAppDocuments: filename=$filename, bytes.length=${bytes.length}');
-    final dir = await getApplicationDocumentsDirectory();
-    final backupDir = Directory(p.join(dir.path, 'Backups'));
+    print('[BackupService] =============== SAVE TO APP DOCUMENTS ===============');
+    print('[BackupService] filename: $filename');
+    print('[BackupService] bytes.length: ${bytes.length}');
+
+    final documentsDir = await getApplicationDocumentsDirectory();
+    print('[BackupService] Documents dir: ${documentsDir.path}');
+
+    final backupDir = Directory(p.join(documentsDir.path, 'Backups'));
     if (!backupDir.existsSync()) {
       await backupDir.create(recursive: true);
-      print('[BackupService] Created backup dir: ${backupDir.path}');
+      print('[BackupService] Created Backups dir: ${backupDir.path}');
     }
+    print('[BackupService] Backup dir: ${backupDir.path}');
+
     final filePath = p.join(backupDir.path, filename);
-    print('[BackupService] saveToAppDocuments: writing to: $filePath');
+    print('[BackupService] Writing to: $filePath');
+
     await File(filePath).writeAsBytes(bytes);
 
     final savedFile = File(filePath);
+    print('[BackupService] File exists: ${savedFile.existsSync()}');
+    print('[BackupService] File size: ${savedFile.lengthSync()} bytes');
+
     if (!savedFile.existsSync()) {
-      throw Exception('Fallback save failed - file not found at: $filePath');
+      throw Exception('App documents save failed - file not found at: $filePath');
     }
     if (savedFile.lengthSync() == 0) {
-      throw Exception('Fallback save failed - file is 0 bytes at: $filePath');
+      throw Exception('App documents save failed - file is 0 bytes at: $filePath');
     }
-    print('[BackupService] saveToAppDocuments: SUCCESS, size=${savedFile.lengthSync()} bytes');
+
+    print('[BackupService] APP DOCUMENTS SAVE SUCCESS: $filePath');
+    print('[BackupService] ===============================================');
     _lastBackupPath = filePath;
     return filePath;
   }
@@ -259,20 +319,5 @@ class BackupService {
     } catch (_) {
       return null;
     }
-  }
-}
-
-class FilePickerSave {
-  static Future<String?> saveFile({
-    required Uint8List bytes,
-    required String fileName,
-  }) async {
-    print('[FilePickerSave] saveFile: calling platform.saveFile(fileName=$fileName)');
-    final result = await file_picker.FilePicker.platform.saveFile(
-      fileName: fileName,
-      bytes: bytes,
-    );
-    print('[FilePickerSave] saveFile: result="$result"');
-    return result;
   }
 }

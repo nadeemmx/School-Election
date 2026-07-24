@@ -6,7 +6,7 @@ class ZipService {
   static Future<void> createZip(String sourceDir, String outputPath) async {
     final archive = Archive();
     await _addDirectoryToArchive(archive, Directory(sourceDir), '');
-    final encoded = ZipEncoder().encode(archive)!;
+    final encoded = ZipEncoder().encode(archive);
     await File(outputPath).writeAsBytes(encoded);
   }
 

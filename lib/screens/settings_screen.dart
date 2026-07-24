@@ -61,7 +61,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     });
 
     try {
-      print('[SettingsScreen] === Starting backup flow ===');
+      print('[SettingsScreen] =============== BACKUP FLOW STARTED ===============');
+      print('[SettingsScreen] Platform: ${Platform.operatingSystem}');
 
       final backupResult = await BackupService.performBackup(
         onProgress: (progress, message) {
@@ -79,7 +80,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       print('[SettingsScreen] Backup created: filename=${backupResult.filename}, '
           'zipBytes.length=${backupResult.zipBytes.length}');
 
-      // Verify ZIP bytes are valid (in-memory, no scoped storage issue)
       if (backupResult.zipBytes.isEmpty) {
         throw Exception('Backup ZIP is empty (0 bytes) - creation failed');
       }
@@ -93,8 +93,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       String finalPath;
       bool savedViaSaf = false;
 
-      // Step A: Try SAF save via file_picker's saveFile (native Java writes via ContentResolver)
-      print('[SettingsScreen] Attempting SAF save via saveFile()...');
+      print('[SettingsScreen] Attempting save to user location...');
       final savedPath = await BackupService.saveToUserLocation(
         backupResult.zipBytes,
         backupResult.filename,
@@ -104,16 +103,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
         finalPath = savedPath;
         savedViaSaf = true;
         if (!mounted) return;
-        print('[SettingsScreen] SAF save returned path: $finalPath');
-        // NOTE: We do NOT verify with File.existsSync() here because on Android 10+,
-        // dart:io cannot access scoped storage paths like /storage/emulated/0/Download/.
-        // The native Java code in FilePickerDelegate.java already confirmed the write
-        // by using ContentResolver.openOutputStream(uri) (SAF-compliant).
-        // If saveFile() returned a path without throwing, the file was saved correctly.
-        print('[SettingsScreen] SAF save: trusting native write (skipping dart:io verify) ✓');
+        print('[SettingsScreen] Save returned path: $finalPath');
+
+        // On desktop platforms (Windows, macOS, Linux), dart:io can access any path
+        // so we verify the file exists immediately
+        if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+          print('[SettingsScreen] Desktop platform: verifying file on disk...');
+          final savedFile = File(finalPath);
+          final fileExists = savedFile.existsSync();
+          final fileSize = fileExists ? savedFile.lengthSync() : 0;
+          print('[SettingsScreen] File exists: $fileExists');
+          print('[SettingsScreen] File size: $fileSize bytes');
+
+          if (!fileExists) {
+            throw Exception('File was not saved at: $finalPath (exists=false)');
+          }
+          if (fileSize == 0) {
+            throw Exception('File is empty (0 bytes) at: $finalPath');
+          }
+          print('[SettingsScreen] Desktop file verification passed ✓');
+        } else {
+          // On Android 10+, dart:io cannot access scoped storage paths.
+          // The native Java code already confirmed the write via ContentResolver.
+          print('[SettingsScreen] Mobile platform: trusting native write (skipping dart:io verify) ✓');
+        }
       } else {
-        // Step B: Fallback - save to app documents directory
-        print('[SettingsScreen] SAF save returned null, falling back to app documents...');
+        print('[SettingsScreen] User location save returned null, falling back to app documents...');
         if (mounted) {
           setState(() {
             _progressMessage = 'Saving to app storage...';
@@ -123,7 +138,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           backupResult.zipBytes,
           backupResult.filename,
         );
-        // App documents are always writable by dart:io, so verify here
         final savedFile = File(finalPath);
         if (!savedFile.existsSync()) {
           throw Exception('Fallback save: file not found at: $finalPath');
