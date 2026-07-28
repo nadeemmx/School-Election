@@ -7,6 +7,7 @@ import '../services/backup/backup_service.dart';
 import '../services/backup/restore_service.dart';
 import '../services/candidate_service.dart';
 import '../theme/app_theme.dart';
+import 'export/export_results_screen.dart';
 import 'import_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -516,6 +517,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildResetCard(),
           const SizedBox(height: 16),
           _buildImportCard(),
+          const SizedBox(height: 16),
+          _buildExportCard(),
           const SizedBox(height: 24),
           _buildSectionHeader('Information'),
           const SizedBox(height: 14),
@@ -1042,6 +1045,113 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           setState(() {});
                         }
                       },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExportCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: AppTheme.secondaryGreen.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: const Icon(
+                    Icons.file_download_rounded,
+                    color: AppTheme.secondaryGreen,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Export Results',
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Export election results to Excel, PDF, or ZIP',
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          color: AppTheme.textGrey,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppTheme.secondaryGreen.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.info_outline_rounded,
+                      size: 16, color: AppTheme.secondaryGreen),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Supports .xlsx, .pdf, and .zip formats. All data is read from the current election database.',
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppTheme.textGrey,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: GradientButton(
+                label: 'Export Results',
+                icon: Icons.file_download_rounded,
+                gradient: [AppTheme.secondaryGreen, const Color(0xFF16A34A)],
+                onPressed: _isBackingUp || _isRestoring
+                    ? null
+                    : () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const ExportResultsScreen()),
+                        ),
               ),
             ),
           ],

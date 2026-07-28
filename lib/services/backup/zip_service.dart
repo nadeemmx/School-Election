@@ -7,6 +7,7 @@ class ZipService {
     final archive = Archive();
     await _addDirectoryToArchive(archive, Directory(sourceDir), '');
     final encoded = ZipEncoder().encode(archive);
+    if (encoded == null) throw Exception('Failed to encode ZIP archive');
     await File(outputPath).writeAsBytes(encoded);
   }
 
